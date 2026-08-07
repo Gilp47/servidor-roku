@@ -5,7 +5,7 @@ import uvicorn
 
 app = FastAPI(title="Explorador Completo de TeraBox para Roku")
 
-# Llave maestra extraída con la extensión
+# Tu nuevo token ndus actualizado
 NDUS_COOKIE = "YSEBUv7teHuiObGR1yrTMpe-8TMfzGalKJIkLHTd"
 
 def explorar_directorio_terabox(ruta_carpeta="/"):
@@ -93,14 +93,19 @@ def extractor_estilo_addon_alfa():
     url_fuente = "https://themoviedb.org"
     try:
         respuesta = requests.get(url_fuente, timeout=8).json()
-        for peli in respuesta.get("results", [])[:14]:
+        resultados = respuesta.get("results", [])
+        for peli in resultados[:14]:
+            titulo = peli.get("title", "Película sin título")
+            ruta_poster = peli.get("poster_path")
+            caratula_url = f"https://tmdb.org{ruta_poster}" if ruta_poster else "https://unsplash.com"
+            
             peliculas_alfa.append({
-                "titulo": peli.get("title", "Película de Alfa"),
-                "caratula": f"https://tmdb.org{peli.get('poster_path')}",
+                "titulo": titulo,
+                "caratula": caratula_url,
                 "video_url": "https://googleapis.com"
             })
-    except:
-        pass
+    except Exception as e:
+        print(f"Error en el extractor estilo Alfa: {e}")
     return peliculas_alfa
 
 @app.get("/contenido")
