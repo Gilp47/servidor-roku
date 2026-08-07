@@ -1,78 +1,138 @@
 import os
 import requests
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 import uvicorn
 
-app = FastAPI(title="Servidor con Extractor Alfa Activo")
+app = FastAPI(title="Explorador Completo de TeraBox para Roku")
 
-# Configuración segura de tus cuentas de TeraBox
-CUENTAS_TERABOX = {
-    "cuenta_1": {"usuario": os.getenv("TERABOX_USER_1", "correo1@gmail.com"), "clave": os.getenv("TERABOX_PASS_1", "clave1")},
-    "cuenta_2": {"usuario": os.getenv("TERABOX_USER_2", "correo2@gmail.com"), "clave": os.getenv("TERABOX_PASS_2", "clave2")},
-    "cuenta_3": {"usuario": os.getenv("TERABOX_USER_3", "correo3@gmail.com"), "clave": os.getenv("TERABOX_PASS_3", "clave3")},
-    "cuenta_4": {"usuario": os.getenv("TERABOX_USER_4", "correo4@gmail.com"), "clave": os.getenv("TERABOX_PASS_4", "clave4")},
-}
+# Llave maestra que extrajiste previamente
+NDUS_COOKIE = "YSEBUv7teHuiObGR1yrTMpe-8TMfzGalKJIkLHTd"
 
-def extractor_estilo_addon_alfa():
+def explorar_directorio_terabox(ruta_carpeta="/"):
     """
-    Simula al Addon Alfa de Kodi. Se conecta por internet a un indexador 
-    de películas real y extrae los títulos y carátulas actuales.
+    Se conecta a la API de archivos de TeraBox y lee el contenido
+    completo de cualquier carpeta (por defecto la raíz '/').
     """
-    peliculas_encontradas = []
+    lista_multimedia = []
     
-    # Usamos una API pública de cine para traer contenido real y dinámico
-    url_fuente = "https://themoviedb.org"
+    # API oficial de listado de directorios de TeraBox
+    url_api = "https://terabox.com"
+    
+    headers = {
+        "Cookie": f"ndus={NDUS_COOKIE}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+    
+    params = {
+        "dir": ruta_carpeta,
+        "order": "name",
+        "desc": "1",
+        "num": "100", # Trae hasta 100 archivos por carpeta
+        "page": "1"
+    }
     
     try:
-        # El servidor simula el raspado (scraping) de la web
-        respuesta = requests.get(url_fuente, timeout=8).json()
-        resultados = respuesta.get("results", [])
+        respuesta = requests.get(url_api, headers=headers, params=params, timeout=10).json()
+        archivos = respuesta.get("list", [])
         
-        # Tomamos las primeras 14 películas para llenar la cuadrícula de tu Roku
-        for peli in resultados[:14]:
-            titulo = peli.get("title", "Película sin título")
-            ruta_poster = peli.get("poster_path")
+        for archivo in archivos:
+            nombre = archivo.get("server_filename", "Archivo sin nombre")
+            es_carpeta = archivo.get("isdir") == 1
             
-            # Construimos la URL real de la carátula de la película
-            caratula_url = f"https://tmdb.org{ruta_poster}" if ruta_poster else "https://unsplash.com"
-            
-            peliculas_encontradas.append({
-                "titulo": titulo,
-                "caratula": caratula_url,
-                # Enlace de video público de prueba (Roku requiere enlaces que terminen en .mp4)
+            # Filtramos para que Roku solo intente reproducir formatos compatibles
+            if es_carpeta or nombre.lower().endswith(('.mp4', '.mkv', '.mov', '.avi')):
+                # Generamos el enlace de streaming directo de TeraBox
+                id_archivo = archivo.get("fs_id")
+                enlace_stream = f"https://terabox.com{id_archivo}" if not es_carpeta else ""
+                
+                lista_multimedia.append({
+                    "titulo": "[CARPETA] " + nombre if es_carpeta else nombre,
+                    "caratula": archivo.get("thumbs", {}).get("url3") or "https://unsplash.com",
+                    "video_url": enlace_stream,
+                    "es_directorio": es_carpeta,
+                    "ruta_interna": archivo.get("path")
+                })
+    except Exception as e:
+        print(f"Error explorando TeraBox: {e}")
+        
+    return lista_multimedia
+
+def buscar_en_terabox(palabra_clave: str):
+    """
+    Motor de búsqueda global. Busca cualquier película, serie o video 
+    en todo tu TeraBox por su nombre.
+    """
+    resultados_busqueda = []
+    url_api = "https://terabox.com"
+    
+    headers = {
+        "Cookie": f"ndus={NDUS_COOKIE}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+    }
+    
+    params = {
+        "key": palabra_clave,
+        "page": "1",
+        "num": "50"
+    }
+    
+    try:
+        respuesta = requests.get(url_api, headers=headers, params=params, timeout=10).json()
+        archivos = respuesta.get("list", [])
+        
+        for archivo in archivos:
+            nombre = archivo.get("server_filename", "Archivo encontrado")
+            if nombre.lower().endswith(('.mp4', '.mkv', '.mov', '.avi')):
+                resultados_busqueda.append({
+                    "titulo": nombre,
+                    "caratula": "https://unsplash.com",
+                    "video_url": f"https://terabox.com{archivo.get('fs_id')}"
+                })
+    except Exception as e:
+        print(f"Error en la búsqueda de TeraBox: {e}")
+        
+    return resultados_busqueda
+
+def extractor_estilo_addon_alfa():
+    peliculas_alfa = []
+    url_fuente = "https://themoviedb.org"
+    try:
+        respuesta = requests.get(url_fuente, timeout=8).json()
+        for peli in respuesta.get("results", [])[:14]:
+            peliculas_alfa.append({
+                "titulo": peli.get("title", "Película de Alfa"),
+                "caratula": f"https://tmdb.org{peli.get('poster_path')}",
                 "video_url": "https://googleapis.com"
             })
-            
-    except Exception as e:
-        print(f"Error en el extractor estilo Alfa: {e}")
-        # Contenido de respaldo por si el internet del servidor falla
-        peliculas_encontradas.append({
-            "titulo": "Película de prueba (Error de conexión)",
-            "caratula": "https://unsplash.com",
-            "video_url": "https://googleapis.com"
-        })
-        
-    return peliculas_encontradas
+    except:
+        pass
+    return peliculas_alfa
 
 @app.get("/contenido")
-def obtener_todo_el_contenido():
-    # Activamos el extractor estilo Alfa para la pestaña de Películas
+def obtener_todo_el_contenido(buscar: str = Query(None), ruta: str = Query("/")):
+    # Si el usuario usa el buscador desde la TV
+    if buscar:
+        resultados = buscar_en_terabox(buscar)
+        return {"PELÍCULAS": [], "SERIES": [], "VIDEOS": resultados, "BIBLIOTECA": resultados, "COMPLEMENTOS": []}
+
+    # Si navega de forma normal por carpetas
+    archivos_terabox = explorar_directorio_terabox(ruta)
     catalogo_alfa = extractor_estilo_addon_alfa()
     
     return {
         "PELÍCULAS": catalogo_alfa, 
         "SERIES": [
             {
-                "titulo": "Serie Alfa - Cap 1 (Prueba)",
+                "titulo": "Serie Alfa - Capítulo 1",
                 "caratula": "https://unsplash.com",
                 "video_url": "https://googleapis.com"
             }
         ],
-        "VIDEOS": [],
-        "BIBLIOTECA": [],
+        "VIDEOS": archivos_terabox,  # Muestra la raíz completa de tus carpetas de TeraBox aquí
+        "BIBLIOTECA": archivos_terabox,  # También mapeado en Biblioteca
         "COMPLEMENTOS": [
             {
-                "titulo": "Conector Alfa Integrado v1.0",
+                "titulo": "Buscador Global TeraBox Activo",
                 "caratula": "https://unsplash.com",
                 "video_url": ""
             }
